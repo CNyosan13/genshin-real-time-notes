@@ -11,7 +11,7 @@ all: login hoyo legacy
 # Build and sync the C# UI helper
 login:
 	dotnet publish LoginForm/WinFormsApp1/WebViewLogin.csproj -c Release -p:PublishProfile=FolderProfile
-	rm -rf embedded/login
+	rm -f embedded/login/*.exe embedded/login/*.dll
 	mkdir -p embedded/login
 	cp "LoginForm/WinFormsApp1/bin/Release/net8.0-windows/publish/win-x64/WebViewLogin.exe" "embedded/login/WebViewLogin-$(VERSION).exe"
 	cp "LoginForm/WinFormsApp1/bin/Release/net8.0-windows/win-x64/runtimes/win-x64/native/WebView2Loader.dll" "embedded/login/WebView2Loader.dll"
@@ -41,5 +41,5 @@ legacy: resin stamina charge
 
 clean:
 	rm -rf hoyo*.exe resin*.exe stamina*.exe charge*.exe
-	rm -rf embedded/login/*
+	rm -f embedded/login/*.exe embedded/login/*.dll
 
