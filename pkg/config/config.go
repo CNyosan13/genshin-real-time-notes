@@ -27,6 +27,9 @@ type Config struct {
 	ResinNotifyThreshold   int `json:"resin_notify_threshold"`
 	StaminaNotifyThreshold int `json:"stamina_notify_threshold"`
 	ChargeNotifyThreshold int `json:"charge_notify_threshold"`
+	MaxResin               int `json:"max_resin"`
+	MaxStamina             int `json:"max_stamina"`
+	MaxCharge              int `json:"max_charge"`
 }
 
 // GetGenshinUID returns the Genshin UID, falling back to the legacy UID.

@@ -186,6 +186,11 @@ func refreshGenshin(cfg *config.Config, m *Menu) {
 	current := gr.Data.CurrentResin
 	max := gr.Data.MaxResin
 
+	if cfg.MaxResin != max {
+		cfg.MaxResin = max
+		config.WriteConfig(cfg, configFile)
+	}
+
 	seconds, err := strconv.Atoi(gr.Data.ResinRecoveryTime)
 	var recovery string
 	if err != nil {
@@ -301,6 +306,11 @@ func refreshHsr(cfg *config.Config, m *Menu) {
 
 	current := hr.Data.CurrentStamina
 	max := hr.Data.MaxStamina
+
+	if cfg.MaxStamina != max {
+		cfg.MaxStamina = max
+		config.WriteConfig(cfg, configFile)
+	}
 	secs := hr.Data.StaminaRecoveryTime
 	recovery := ""
 	if secs != 0 {
@@ -404,6 +414,11 @@ func refreshZzz(cfg *config.Config, m *Menu) {
 
 	current := zr.Data.Energy.Progress.Current
 	max := zr.Data.Energy.Progress.Max
+
+	if cfg.MaxCharge != max {
+		cfg.MaxCharge = max
+		config.WriteConfig(cfg, configFile)
+	}
 	secs := zr.Data.Energy.Restore
 	recovery := ""
 	if secs != 0 {

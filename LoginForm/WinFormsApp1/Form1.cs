@@ -188,5 +188,14 @@ namespace WebViewLogin
 
         [JsonPropertyName("dark_mode")]
         public required Boolean DarkMode { get; set; }
+
+        [JsonPropertyName("max_resin")]
+        public int MaxResin { get; set; } = 0;
+
+        [JsonPropertyName("max_stamina")]
+        public int MaxStamina { get; set; } = 0;
+
+        [JsonPropertyName("max_charge")]
+        public int MaxCharge { get; set; } = 0;
     }
 }
