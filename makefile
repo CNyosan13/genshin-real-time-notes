@@ -1,35 +1,45 @@
 VERSION := v0.0.8
 
-.PHONY: hoyo resin stamina charge all clean login
+.PHONY: hoyo resin stamina charge all clean login legacy
 
 ENV := CGO_ENABLED=1 GOOS=windows GOARCH=amd64
-LDFLAGS := -ldflags "-H=windowsgui -X resin/pkg/config.VERSION=$(VERSION)"
+LDFLAGS := -ldflags "-H=windowsgui"
 
-# Default: build the unified binary
-all: hoyo
+# Default: build everything from scratch
+all: login hoyo legacy
 
+# Build and sync the C# UI helper
+login:
+	dotnet publish LoginForm/WinFormsApp1/WebViewLogin.csproj -c Release -p:PublishProfile=FolderProfile
+	rm -rf embedded/login
+	mkdir -p embedded/login
+	cp "LoginForm/WinFormsApp1/bin/Release/net8.0-windows/publish/win-x64/WebViewLogin.exe" "embedded/login/WebViewLogin-$(VERSION).exe"
+	cp "LoginForm/WinFormsApp1/bin/Release/net8.0-windows/win-x64/runtimes/win-x64/native/WebView2Loader.dll" "embedded/login/WebView2Loader.dll"
+
+# Build individual apps with correct "Icon Baking"
 hoyo:
-	${ENV} go build $(LDFLAGS) -o hoyo.exe cmd/hoyo/main.go
+	cd cmd/hoyo && go-winres make
+	cd cmd/hoyo && ${ENV} go build $(LDFLAGS) -o ../../hoyo.exe .
+	rm -f cmd/hoyo/*.syso
 
-# Legacy individual binaries (kept for backward compatibility)
 resin:
-	${ENV} go build $(LDFLAGS) -o resin.exe cmd/resin/main.go
+	cd cmd/resin && go-winres make
+	cd cmd/resin && ${ENV} go build $(LDFLAGS) -o ../../resin.exe .
+	rm -f cmd/resin/*.syso
 
 stamina:
-	${ENV} go build $(LDFLAGS) -o stamina.exe cmd/stamina/main.go
+	cd cmd/stamina && go-winres make
+	cd cmd/stamina && ${ENV} go build $(LDFLAGS) -o ../../stamina.exe .
+	rm -f cmd/stamina/*.syso
 
 charge:
-	${ENV} go build $(LDFLAGS) -o charge.exe cmd/charge/main.go
+	cd cmd/charge && go-winres make
+	cd cmd/charge && ${ENV} go build $(LDFLAGS) -o ../../charge.exe .
+	rm -f cmd/charge/*.syso
 
 legacy: resin stamina charge
 
-login:
-	VERSION=$(VERSION) ./buildLogin
-
 clean:
-	rm -rf hoyo*.exe
-	rm -rf resin*.exe
-	rm -rf stamina*.exe
-	rm -rf charge*.exe
-	rm -rf login/*.exe.WebView2
+	rm -rf hoyo*.exe resin*.exe stamina*.exe charge*.exe
+	rm -rf embedded/login/*
 

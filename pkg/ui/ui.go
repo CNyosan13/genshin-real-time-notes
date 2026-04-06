@@ -104,27 +104,34 @@ func watchEvents[T any](cm *CommonMenu, mgr *config.Manager, menu *T, auto *auto
 func login[T any](app string, configFile string, cfg *config.Config, menu *T, refresh func(*config.Config, *T)) (*config.Config, error) {
 	wd, err := os.Getwd()
 	if err != nil {
-		logging.Fail("Failed to get working directory")
+		logging.Fail("Failed to get working directory: %v", err)
 		return nil, err
 	}
 	exeName := fmt.Sprintf("WebViewLogin-%s.exe", config.VERSION)
 	exe := filepath.Join(wd, "login", exeName)
+	
+	logging.Info("Launching login helper: %s %s", exe, app)
 	cmd := exec.Command(exe, app)
 	cmd.Dir = "."
+	
 	// Block until finished
-	_, err = cmd.CombinedOutput()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		logging.Fail("Failed to show login window:\n%s", err)
+		logging.Fail("Login helper exited with error: %v\nOutput: %s", err, string(output))
+		windows.MessageBox(0, 
+			windows.StringToUTF16Ptr(fmt.Sprintf("Failed to launch login window.\n\nPlease ensure you have the .NET 8.0 Desktop Runtime installed.\n\nError: %v", err)), 
+			windows.StringToUTF16Ptr("HoyoLAB Monitor Error"), 
+			windows.MB_OK|windows.MB_ICONERROR)
 		return nil, err
 	}
-	logging.Info("Done")
+	logging.Info("Login helper finished successfully")
 
 	cookies, err := config.LoadConfig(configFile)
 	if err != nil {
-		logging.Fail("Failed to get webview cookies")
+		logging.Fail("Failed to load new config after login: %v", err)
 		return nil, err
 	}
-	logging.Info("Got ltoken and ltuid from webview")
+	logging.Info("Successfully refreshed credentials from login helper")
 	refresh(cookies, menu)
 	return cookies, nil
 }

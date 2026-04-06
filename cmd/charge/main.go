@@ -74,8 +74,16 @@ func refreshData(cfg *config.Config, m *Menu) {
 		return
 	}
 
-	current := zr.Data.Energy.Progress.Current
-	max := zr.Data.Energy.Progress.Max
+	var currentVal, maxVal int
+	if zr.Data.Energy.Progress.Max > 0 {
+		currentVal = zr.Data.Energy.Progress.Current
+		maxVal = zr.Data.Energy.Progress.Max
+	} else {
+		logging.Fail("ZZZ: data is empty or invalid")
+		m.Charge.SetTitle("Charge: error")
+		return
+	}
+
 	secs := zr.Data.Energy.Restore
 	recovery := ""
 	if secs != 0 {
@@ -83,12 +91,12 @@ func refreshData(cfg *config.Config, m *Menu) {
 		recovery = fmt.Sprintf(" [%dh %dm]", hours, minutes)
 	}
 
-	if current == max {
+	if currentVal == maxVal {
 		systray.SetIcon(assets.ChargeFull)
 	} else {
 		systray.SetIcon(assets.ChargeNotFull)
 	}
-	title := fmt.Sprintf("%d/%d%s", current, max, recovery)
+	title := fmt.Sprintf("%d/%d%s", currentVal, maxVal, recovery)
 	systray.SetTooltip(title)
 
 	m.Charge.SetTitle(title)
@@ -138,6 +146,7 @@ func onReady() {
 }
 
 func main() {
+	embedded.ExtractEmbeddedFiles()
 	cmd.ReadArgs(configFile, ".\\daily_charge.log", func(cfg *config.Config) {
 		hoyo.GetDailyData[zzz.ZzzDailyResponse](zzz.DailyURL, cfg.Ltoken, cfg.Ltuid, zzz.ActID, "zzz")
 	})

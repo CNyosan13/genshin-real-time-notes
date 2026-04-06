@@ -183,12 +183,18 @@ func refreshGenshin(cfg *config.Config, m *Menu) {
 		return
 	}
 
-	current := gr.Data.CurrentResin
-	max := gr.Data.MaxResin
+	var currentVal, maxVal int
+	if gr.Data.MaxResin > 0 {
+		currentVal = gr.Data.CurrentResin
+		maxVal = gr.Data.MaxResin
 
-	if cfg.MaxResin != max {
-		cfg.MaxResin = max
-		config.WriteConfig(cfg, configFile)
+		if cfg.MaxResin != maxVal {
+			cfg.MaxResin = maxVal
+			config.WriteConfig(cfg, configFile)
+		}
+	} else {
+		logging.Fail("Genshin: data is empty or invalid")
+		return
 	}
 
 	seconds, err := strconv.Atoi(gr.Data.ResinRecoveryTime)
@@ -202,22 +208,22 @@ func refreshGenshin(cfg *config.Config, m *Menu) {
 		recovery = fmt.Sprintf(" [%dh %dm]", hours, minutes)
 	}
 
-	title := fmt.Sprintf("Resin: %d/%d%s", current, max, recovery)
+	title := fmt.Sprintf("Resin: %d/%d%s", currentVal, maxVal, recovery)
 	threshold := cfg.ResinNotifyThreshold
 	if threshold == 0 {
-		threshold = max
+		threshold = maxVal
 	}
 
 	// Dashboard UI Logic
-	isFull := current >= max
-	isThresholdMet := current >= threshold
+	isFull := currentVal >= maxVal
+	isThresholdMet := currentVal >= threshold
 
 	if isFull {
 		m.Resin.SetIcon(assets.ResinFull)
 		title = "!!! " + title
 		setNotified("genshin_threshold", true) // Ensure threshold alert is suppressed
 		if !isNotified("genshin_max") {
-			ui.Notify("Genshin Impact", "Your Resin is FULL (200/200)!", "genshin", assets.ResinFull)
+			ui.Notify("Genshin Impact", fmt.Sprintf("Your Resin is FULL (%d/%d)!", currentVal, maxVal), "genshin", assets.ResinFull)
 			setNotified("genshin_max", true)
 		}
 	} else if isThresholdMet {
@@ -225,7 +231,7 @@ func refreshGenshin(cfg *config.Config, m *Menu) {
 		title = "! " + title
 		setNotified("genshin_max", false)
 		if !isNotified("genshin_threshold") {
-			ui.Notify("Genshin Impact", fmt.Sprintf("Your Resin has reached your threshold: %d/%d!", current, max), "genshin", assets.ResinFull)
+			ui.Notify("Genshin Impact", fmt.Sprintf("Your Resin has reached your threshold: %d/%d!", currentVal, maxVal), "genshin", assets.ResinFull)
 			setNotified("genshin_threshold", true)
 		}
 	} else {
@@ -304,12 +310,18 @@ func refreshHsr(cfg *config.Config, m *Menu) {
 		return
 	}
 
-	current := hr.Data.CurrentStamina
-	max := hr.Data.MaxStamina
+	var currentVal, maxVal int
+	if hr.Data.MaxStamina > 0 {
+		currentVal = hr.Data.CurrentStamina
+		maxVal = hr.Data.MaxStamina
 
-	if cfg.MaxStamina != max {
-		cfg.MaxStamina = max
-		config.WriteConfig(cfg, configFile)
+		if cfg.MaxStamina != maxVal {
+			cfg.MaxStamina = maxVal
+			config.WriteConfig(cfg, configFile)
+		}
+	} else {
+		logging.Fail("HSR: data is empty or invalid")
+		return
 	}
 	secs := hr.Data.StaminaRecoveryTime
 	recovery := ""
@@ -318,22 +330,22 @@ func refreshHsr(cfg *config.Config, m *Menu) {
 		recovery = fmt.Sprintf(" [%dh %dm]", hours, minutes)
 	}
 
-	title := fmt.Sprintf("Stamina: %d/%d%s", current, max, recovery)
+	title := fmt.Sprintf("Stamina: %d/%d%s", currentVal, maxVal, recovery)
 	threshold := cfg.StaminaNotifyThreshold
 	if threshold == 0 {
-		threshold = max
+		threshold = maxVal
 	}
 
 	// Dashboard UI Logic
-	isFull := current >= max
-	isThresholdMet := current >= threshold
+	isFull := currentVal >= maxVal
+	isThresholdMet := currentVal >= threshold
 
 	if isFull {
 		m.Stamina.SetIcon(assets.StaminaFull)
 		title = "!!! " + title
 		setNotified("hsr_threshold", true)
 		if !isNotified("hsr_max") {
-			ui.Notify("Honkai: Star Rail", "Your Stamina is FULL (240/240)!", "hsr", assets.StaminaFull)
+			ui.Notify("Honkai: Star Rail", fmt.Sprintf("Your Stamina is FULL (%d/%d)!", currentVal, maxVal), "hsr", assets.StaminaFull)
 			setNotified("hsr_max", true)
 		}
 	} else if isThresholdMet {
@@ -341,7 +353,7 @@ func refreshHsr(cfg *config.Config, m *Menu) {
 		title = "! " + title
 		setNotified("hsr_max", false)
 		if !isNotified("hsr_threshold") {
-			ui.Notify("Honkai: Star Rail", fmt.Sprintf("Your Stamina has reached your threshold: %d/%d!", current, max), "hsr", assets.StaminaFull)
+			ui.Notify("Honkai: Star Rail", fmt.Sprintf("Your Stamina has reached your threshold: %d/%d!", currentVal, maxVal), "hsr", assets.StaminaFull)
 			setNotified("hsr_threshold", true)
 		}
 	} else {
@@ -412,12 +424,18 @@ func refreshZzz(cfg *config.Config, m *Menu) {
 		return
 	}
 
-	current := zr.Data.Energy.Progress.Current
-	max := zr.Data.Energy.Progress.Max
+	var currentVal, maxVal int
+	if zr.Data.Energy.Progress.Max > 0 {
+		currentVal = zr.Data.Energy.Progress.Current
+		maxVal = zr.Data.Energy.Progress.Max
 
-	if cfg.MaxCharge != max {
-		cfg.MaxCharge = max
-		config.WriteConfig(cfg, configFile)
+		if cfg.MaxCharge != maxVal {
+			cfg.MaxCharge = maxVal
+			config.WriteConfig(cfg, configFile)
+		}
+	} else {
+		logging.Fail("ZZZ: data is empty or invalid")
+		return
 	}
 	secs := zr.Data.Energy.Restore
 	recovery := ""
@@ -426,22 +444,22 @@ func refreshZzz(cfg *config.Config, m *Menu) {
 		recovery = fmt.Sprintf(" [%dh %dm]", hours, minutes)
 	}
 
-	title := fmt.Sprintf("Charge: %d/%d%s", current, max, recovery)
+	title := fmt.Sprintf("Charge: %d/%d%s", currentVal, maxVal, recovery)
 	threshold := cfg.ChargeNotifyThreshold
 	if threshold == 0 {
-		threshold = max
+		threshold = maxVal
 	}
 
 	// Dashboard UI Logic
-	isFull := current >= max
-	isThresholdMet := current >= threshold
+	isFull := currentVal >= maxVal
+	isThresholdMet := currentVal >= threshold
 
 	if isFull {
 		m.Charge.SetIcon(assets.ChargeFull)
 		title = "!!! " + title
 		setNotified("zzz_threshold", true)
 		if !isNotified("zzz_max") {
-			ui.Notify("Zenless Zone Zero", "Your Battery Charge is FULL (240/240)!", "zzz", assets.ChargeFull)
+			ui.Notify("Zenless Zone Zero", fmt.Sprintf("Your Battery Charge is FULL (%d/%d)!", currentVal, maxVal), "zzz", assets.ChargeFull)
 			setNotified("zzz_max", true)
 		}
 	} else if isThresholdMet {
@@ -449,7 +467,7 @@ func refreshZzz(cfg *config.Config, m *Menu) {
 		title = "! " + title
 		setNotified("zzz_max", false)
 		if !isNotified("zzz_threshold") {
-			ui.Notify("Zenless Zone Zero", fmt.Sprintf("Your Battery Charge has reached your threshold: %d/%d!", current, max), "zzz", assets.ChargeFull)
+			ui.Notify("Zenless Zone Zero", fmt.Sprintf("Your Battery Charge has reached your threshold: %d/%d!", currentVal, maxVal), "zzz", assets.ChargeFull)
 			setNotified("zzz_threshold", true)
 		}
 	} else {

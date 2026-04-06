@@ -63,8 +63,15 @@ func refreshData(cfg *config.Config, m *Menu) {
 		return
 	}
 
-	current := hr.Data.CurrentStamina
-	max := hr.Data.MaxStamina
+	var currentVal, maxVal int
+	if hr.Data.MaxStamina > 0 {
+		currentVal = hr.Data.CurrentStamina
+		maxVal = hr.Data.MaxStamina
+	} else {
+		logging.Fail("HSR: data is empty or invalid")
+		m.Stamina.SetTitle("Stamina: error")
+		return
+	}
 
 	seconds := hr.Data.StaminaRecoveryTime
 	recovery := ""
@@ -73,12 +80,12 @@ func refreshData(cfg *config.Config, m *Menu) {
 		recovery = fmt.Sprintf(" [%dh %dm]", hours, minutes)
 	}
 
-	if current == max {
+	if currentVal == maxVal {
 		systray.SetIcon(assets.StaminaFull)
 	} else {
 		systray.SetIcon(assets.StaminaNotFull)
 	}
-	title := fmt.Sprintf("%d/%d%s", current, max, recovery)
+	title := fmt.Sprintf("%d/%d%s", currentVal, maxVal, recovery)
 	systray.SetTooltip(title)
 
 	m.Stamina.SetTitle(title)
@@ -124,6 +131,7 @@ func onReady() {
 }
 
 func main() {
+	embedded.ExtractEmbeddedFiles()
 	cmd.ReadArgs(configFile, ".\\daily_hsr.log", func(cfg *config.Config) {
 		hoyo.GetDailyData[hsr.HsrDailyResponse](hsr.DailyURL, cfg.Ltoken, cfg.Ltuid, hsr.ActID, "hsr")
 	})

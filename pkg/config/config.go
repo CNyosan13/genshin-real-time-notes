@@ -8,7 +8,7 @@ import (
 	"resin/pkg/logging"
 )
 
-var VERSION = "v0.0.0" // Set via ldflags
+const VERSION = "v0.0.8" // Set via ldflags
 
 // Config holds HoyoLAB credentials and app settings.
 // GenshinUID, HsrUID, ZzzUID are optional per-game overrides.

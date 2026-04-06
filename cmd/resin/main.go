@@ -65,8 +65,16 @@ func refreshData(cfg *config.Config, m *Menu) {
 		return
 	}
 
-	current := gr.Data.CurrentResin
-	max := gr.Data.MaxResin
+	var currentVal, maxVal int
+	if gr.Data.MaxResin > 0 {
+		currentVal = gr.Data.CurrentResin
+		maxVal = gr.Data.MaxResin
+	} else {
+		logging.Fail("Genshin: data is empty or invalid")
+		m.Resin.SetTitle("Resin: error")
+		return
+	}
+
 	seconds, _ := strconv.Atoi(gr.Data.ResinRecoveryTime)
 	recovery := ""
 	if seconds != 0 {
@@ -74,12 +82,12 @@ func refreshData(cfg *config.Config, m *Menu) {
 		recovery = fmt.Sprintf(" [%dh %dm]", hours, minutes)
 	}
 
-	if current == max {
+	if currentVal == maxVal {
 		systray.SetIcon(assets.ResinFull)
 	} else {
 		systray.SetIcon(assets.ResinNotFull)
 	}
-	title := fmt.Sprintf("%d/%d%s", current, max, recovery)
+	title := fmt.Sprintf("%d/%d%s", currentVal, maxVal, recovery)
 	systray.SetTooltip(title)
 
 	m.Resin.SetTitle(title)
@@ -125,6 +133,7 @@ func onReady() {
 }
 
 func main() {
+	embedded.ExtractEmbeddedFiles()
 	cmd.ReadArgs(configFile, ".\\daily_resin.log", func(cfg *config.Config) {
 		hoyo.GetDailyData[genshin.GenshinDailyResponse](genshin.DailyURL, cfg.Ltoken, cfg.Ltuid, genshin.ActID, "genshin")
 	})

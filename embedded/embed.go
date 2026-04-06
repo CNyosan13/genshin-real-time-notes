@@ -23,17 +23,18 @@ func ReadAssets[T any](a *T) {
 		if !ok {
 			continue // no tag
 		}
-		bytes, err := AssetFiles.ReadFile(fmt.Sprintf("assets/%s", file))
-		// Panic on failure to read any asset
+		// Match the internal Go embed path structure
+		fullPath := fmt.Sprintf("assets/%s", file)
+		bytes, err := AssetFiles.ReadFile(fullPath)
+		
+		// Log and continue if a specific asset is missing, rather than crashing
 		if err != nil {
-			logging.Panic("Failed to read assets:\n%v", err)
-			os.Exit(1)
-			return
+			logging.Fail("Asset not found in bundle: \"%s\" (error: %v)", fullPath, err)
+			continue
 		}
 
 		elem.Field(i).SetBytes(bytes)
 	}
-	return
 }
 
 func ExtractEmbeddedFiles() {
