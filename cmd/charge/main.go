@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math/rand"
 	"resin/cmd"
 	"resin/embedded"
 	"resin/pkg/config"
@@ -9,14 +10,15 @@ import (
 	"resin/pkg/hoyo/zzz"
 	"resin/pkg/logging"
 	"resin/pkg/ui"
+	"time"
 
 	"github.com/energye/systray"
 )
 
 var logFile string = ".\\charge.log"
-var configFile string = ".\\zzz_cookie.json"
+var configFile string = ".\\hoyo_cookie.json"
 
-type ZzzAssets struct {
+type AllAssets struct {
 	ChargeFull     []byte `asset:"zzz/charge_full.ico"`
 	ChargeNotFull  []byte `asset:"zzz/charge_not_full.ico"`
 	ChargeError    []byte `asset:"zzz/charge_error.ico"`
@@ -27,7 +29,7 @@ type ZzzAssets struct {
 	Tape           []byte `asset:"zzz/tape.ico"`
 }
 
-var assets ZzzAssets
+var assets AllAssets
 
 type Menu struct {
 	Charge      *systray.MenuItem
@@ -49,112 +51,96 @@ var CardSigns = map[string]string{
 }
 
 func refreshData(cfg *config.Config, m *Menu) {
-	// First digit is always 1, differentiate by second digit
-	server, ok := zzz.Servers[cfg.UID[1]]
-	if !ok {
-		logging.Fail(`Failed getting UID region (UID="%s")`, cfg.UID)
-		systray.SetTooltip("Failed getting UID region!")
-		systray.SetIcon(assets.ChargeError)
+	uid := cfg.GetZzzUID()
+	if uid == "" {
+		m.Charge.SetTitle("Charge: no UID set")
 		return
 	}
-	zr, err := hoyo.GetData[zzz.ZzzResponse](zzz.BaseURL, server, cfg.UID, cfg.Ltoken, cfg.Ltuid)
+	server, ok := zzz.Servers[uid[1]]
+	if !ok {
+		m.Charge.SetTitle("Charge: unknown region")
+		return
+	}
+
+	zr, err := hoyo.GetData[zzz.ZzzResponse](zzz.BaseURL, server, uid, cfg.Ltoken, cfg.Ltuid)
 	if err != nil {
-		logging.Fail("Failed getting data from %s: Check your UID, ltoken, and ltuid\n%s", zzz.BaseURL, err)
-		systray.SetTooltip("Failed getting data!")
+		logging.Fail("ZZZ: failed getting data from %s: %s", zzz.BaseURL, err)
 		systray.SetIcon(assets.ChargeError)
 		return
 	}
 	if zr.Retcode != 0 {
-		logging.Fail("Server responded with (%d): %s\nCheck your UID, ltoken, and ltuid", zr.Retcode, zr.Message)
-		systray.SetTooltip("Bad response from server!")
+		logging.Fail("ZZZ: server responded with (%d): %s", zr.Retcode, zr.Message)
 		systray.SetIcon(assets.ChargeError)
 		return
 	}
 
 	current := zr.Data.Energy.Progress.Current
 	max := zr.Data.Energy.Progress.Max
-
-	seconds := zr.Data.Energy.Restore
+	secs := zr.Data.Energy.Restore
 	recovery := ""
-	if seconds != 0 {
-		hours, minutes := hoyo.GetTime(seconds)
+	if secs != 0 {
+		hours, minutes := hoyo.GetTime(secs)
 		recovery = fmt.Sprintf(" [%dh %dm]", hours, minutes)
 	}
 
-	charge := assets.ChargeNotFull
 	if current == max {
-		charge = assets.ChargeFull
-	}
-	systray.SetIcon(charge)
-	m.Charge.SetIcon(charge)
-
-	daily_current := zr.Data.Vitality.Current
-	daily_max := zr.Data.Vitality.Max
-	m.Engagement.SetTitle(fmt.Sprintf("Engagement: %d/%d", daily_current, daily_max))
-	if daily_current == daily_max {
-		m.Engagement.Disable()
-		m.Engagement.SetIcon(assets.EngagementDone)
+		systray.SetIcon(assets.ChargeFull)
 	} else {
-		m.Engagement.Enable()
-		m.Engagement.SetIcon(assets.Engagement)
+		systray.SetIcon(assets.ChargeNotFull)
 	}
-
-	saleState, ok := SaleStates[zr.Data.VhsSale.SaleState]
-	if !ok {
-		logging.Fail(fmt.Sprintf(`Failed to read video store state (state="%s")`, zr.Data.VhsSale.SaleState))
-		m.VideoStore.SetTitle("Video Store: ERROR")
-	} else {
-		m.VideoStore.SetTitle(fmt.Sprintf("Video Store: %s", saleState))
-	}
-
-	scratchState, ok := CardSigns[zr.Data.CardSign]
-	if !ok {
-		logging.Fail(fmt.Sprintf(`Failed to read scratch card state (state="%s")`, zr.Data.CardSign))
-		m.ScratchCard.SetTitle("Scratch Card: ERROR")
-	} else {
-		m.ScratchCard.SetTitle(fmt.Sprintf("Scratch Card: %s", scratchState))
-	}
-
 	title := fmt.Sprintf("%d/%d%s", current, max, recovery)
 	systray.SetTooltip(title)
+
 	m.Charge.SetTitle(title)
-}
+	dailyCur := zr.Data.Vitality.Current
+	dailyMax := zr.Data.Vitality.Max
+	m.Engagement.SetTitle(fmt.Sprintf("Engagement: %d/%d", dailyCur, dailyMax))
 
-func checkIn(cfg *config.Config) {
-	json, err := hoyo.GetDailyData[zzz.ZzzDailyResponse](zzz.DailyURL, cfg.Ltoken, cfg.Ltuid, zzz.ActID, "zzz")
-	if err != nil {
-		logging.Fail("Failed getting check in repsonse\n%s", err)
-		return
+	if saleState, ok := SaleStates[zr.Data.VhsSale.SaleState]; ok {
+		m.VideoStore.SetTitle(fmt.Sprintf("Video Store: %s", saleState))
+	} else {
+		m.VideoStore.SetTitle("Video Store: ERROR")
 	}
-	logging.Info("%d: %s", json.Retcode, json.Message)
-}
 
-func watchEvents(cfg *config.Config, m *Menu) {
-	m.CheckIn.Click(func() {
-		logging.Info("Clicked check in")
-		checkIn(cfg)
-	})
+	if cardSign, ok := CardSigns[zr.Data.CardSign]; ok {
+		m.ScratchCard.SetTitle(fmt.Sprintf("Scratch Card: %s", cardSign))
+	} else {
+		m.ScratchCard.SetTitle("Scratch Card: ERROR")
+	}
 }
 
 func onReady() {
 	defer logging.CapturePanic()
 	logging.SetFile(logFile)
-
 	embedded.ReadAssets(&assets)
 
-	var m Menu
+	m := &Menu{}
 	m.Charge = ui.CreateMenuItem("Charge: ?/?", assets.ChargeNotFull)
 	m.Engagement = ui.CreateMenuItem("Engagement: ?/?", assets.Engagement)
 	m.ScratchCard = ui.CreateMenuItem("Scratch Card: ???", assets.Ticket)
 	m.VideoStore = ui.CreateMenuItem("Video Store: ???", assets.Tape)
 	m.CheckIn = ui.CreateMenuItem("Check In", assets.CheckIn)
 
-	cfg := ui.InitApp("Zenless Zone Zero Real-Time Notes", "?/?", assets.ChargeNotFull, logFile, configFile, &m, "zzz", refreshData)
-	watchEvents(cfg, &m)
+	rand.Seed(time.Now().UnixNano())
+
+	mgr := ui.InitApp("Zenless Zone Zero Real-Time Notes", "?/?", assets.ChargeNotFull, logFile, configFile, m, "zzz", refreshData)
+
+	m.CheckIn.Click(func() {
+		logging.Info("Clicked ZZZ check-in")
+		resp, err := hoyo.GetDailyData[zzz.ZzzDailyResponse](zzz.DailyURL, mgr.Get().Ltoken, mgr.Get().Ltuid, zzz.ActID, "zzz")
+		if err != nil {
+			logging.Fail("ZZZ check-in failed: %s", err)
+			return
+		}
+		logging.Info("ZZZ check-in: %d %s", resp.Retcode, resp.Message)
+		ui.Notify("ZZZ Check-In", resp.Message, "zzz", assets.CheckIn)
+	})
 }
 
 func main() {
-	cmd.ReadArgs(configFile, ".\\daily_zzz.log", checkIn)
+	cmd.ReadArgs(configFile, ".\\daily_charge.log", func(cfg *config.Config) {
+		hoyo.GetDailyData[zzz.ZzzDailyResponse](zzz.DailyURL, cfg.Ltoken, cfg.Ltuid, zzz.ActID, "zzz")
+	})
 	defer logging.CapturePanic()
 	systray.Run(onReady, cmd.OnExit)
 }

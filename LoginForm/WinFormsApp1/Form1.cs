@@ -13,12 +13,13 @@ namespace WebViewLogin
             InitializeComponent();
 
             string[] args = Environment.GetCommandLineArgs();
-            string url = "https://www.google.com";
-            App = "unknown";
+            string url = "https://act.hoyolab.com/app/community-game-records-sea/index.html#/ys";
+            App = "hoyo";
             if (args.Length > 1)
             {
                 switch (args[1])
                 {
+                    case "hoyo":
                     case "genshin":
                         url = "https://act.hoyolab.com/app/community-game-records-sea/index.html#/ys";
                         Icon = Properties.Resources.GenshinIcon;
@@ -85,25 +86,38 @@ namespace WebViewLogin
                 return;
             }
 
-            string uid = await webView.ExecuteScriptAsync(UidSelectorJS);
-            if (uid == "null" || uid == null)
+            // Auto-Discovery of UIDs
+            string genshin_uid = "";
+            string hsr_uid = "";
+            string zzz_uid = "";
+
+            try
             {
-                Warning("Could not find UID. Make sure you are logged in.");
-                return;
+                var client = new HttpClient();
+                client.DefaultRequestHeaders.Add("Cookie", $"ltoken_v2={ltoken.Value}; ltuid_v2={ltuid.Value}");
+                client.DefaultRequestHeaders.Add("Referer", "https://act.hoyolab.com/");
+                var response = await client.GetAsync($"https://bbs-api-os.hoyolab.com/game_record/card/wapi/getGameRecordCard?uid={ltuid.Value}");
+                if (response.IsSuccessStatusCode)
+                {
+                    var jsonStr = await response.Content.ReadAsStringAsync();
+                    using var doc = JsonDocument.Parse(jsonStr);
+                    if (doc.RootElement.GetProperty("retcode").GetInt32() == 0)
+                    {
+                        var list = doc.RootElement.GetProperty("data").GetProperty("list");
+                        foreach (var item in list.EnumerateArray())
+                        {
+                            int id = item.GetProperty("game_id").GetInt32();
+                            string roleId = item.GetProperty("game_role_id").GetString();
+                            if (id == 2) genshin_uid = roleId; // Genshin
+                            if (id == 6) hsr_uid = roleId;    // HSR
+                            if (id == 8) zzz_uid = roleId;    // ZZZ
+                        }
+                    }
+                }
             }
-
-            uid = new String(uid.Where(char.IsAsciiDigit).ToArray());
-
-            if (!uid.All(char.IsAsciiDigit))
+            catch (Exception ex)
             {
-                Warning("UID must be only numbers: Got \"" + uid + "\"");
-                return;
-            }
-
-            if (uid.Length != ExpectedUidLength)
-            {
-                Warning("UID is not the expected length (" + ExpectedUidLength + "): Got \"" + uid + "\"");
-                return;
+                Warning("Auto-discovery failed, but cookies were captured: " + ex.Message);
             }
 
             uint refresh = 60;
@@ -113,12 +127,13 @@ namespace WebViewLogin
                 return;
             }
 
-
-
             var cookies = new Cookies()
             {
                 RefreshInterval = refresh,
-                UID = uid,
+                UID = genshin_uid, // Legacy fallback
+                GenshinUID = genshin_uid,
+                HsrUID = hsr_uid,
+                ZzzUID = zzz_uid,
                 Ltoken = ltoken.Value,
                 Ltuid = ltuid.Value,
                 DarkMode = darkModeCheckBox.Checked,
@@ -144,7 +159,6 @@ namespace WebViewLogin
             if (e.IsSuccess)
             {
                 ((WebView2)sender).ExecuteScriptAsync("document.querySelector('body').style.overflow='scroll';var style=document.createElement('style');style.type='text/css';style.innerHTML='::-webkit-scrollbar{display:none}';document.getElementsByTagName('body')[0].appendChild(style)");
-                // ((WebView2)sender).ExecuteScriptAsync("document.querySelector('.cp-y-no_login-btn').click()");
             }
         }
     }
@@ -152,7 +166,16 @@ namespace WebViewLogin
     internal class Cookies
     {
         [JsonPropertyName("uid")]
-        public required string UID { get; set; }
+        public string UID { get; set; } = "";
+
+        [JsonPropertyName("genshin_uid")]
+        public string GenshinUID { get; set; } = "";
+
+        [JsonPropertyName("hsr_uid")]
+        public string HsrUID { get; set; } = "";
+
+        [JsonPropertyName("zzz_uid")]
+        public string ZzzUID { get; set; } = "";
 
         [JsonPropertyName("refresh_interval")]
         public required uint RefreshInterval { get; set; }

@@ -8,3 +8,5 @@
 *.zip
 /*.sh
 /.direnv
+/.agent
+*.syso

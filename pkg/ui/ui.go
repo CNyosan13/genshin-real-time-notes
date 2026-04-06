@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"resin/pkg/autostart"
 	"resin/pkg/config"
@@ -47,25 +46,27 @@ func CreateMenuItem(title string, icon []byte) *systray.MenuItem {
 	return item
 }
 
-func refreshLoop[T any](cfg *config.Config, menu *T, refresh func(*config.Config, *T)) {
-	duration_secs := 60
-	if cfg != nil {
-		duration_secs = cfg.RefreshInterval
-	}
-	duration := time.Duration(duration_secs) * time.Second
+func refreshLoop[T any](mgr *config.Manager, menu *T, refresh func(*config.Config, *T)) {
 	for {
+		cfg := mgr.Get()
+		duration_secs := 60
+		if cfg != nil {
+			duration_secs = cfg.RefreshInterval
+		}
+		duration := time.Duration(duration_secs) * time.Second
+
 		refresh(cfg, menu)
 		time.Sleep(duration)
 	}
 }
 
-func watchEvents[T any](cm *CommonMenu, cfg *config.Config, menu *T, auto *autostart.App, logFile string, configFile string, app string, refresh func(*config.Config, *T)) {
+func watchEvents[T any](cm *CommonMenu, mgr *config.Manager, menu *T, auto *autostart.App, logFile string, configFile string, app string, refresh func(*config.Config, *T)) {
 	cm.Quit.Click(func() {
 		systray.Quit()
 	})
 	cm.Refresh.Click(func() {
 		logging.Info("User clicked refresh")
-		refresh(cfg, menu)
+		refresh(mgr.Get(), menu)
 	})
 	cm.Logs.Click(func() {
 		logging.Info(fmt.Sprintf("Opening \"%s\"", logFile))
@@ -73,11 +74,12 @@ func watchEvents[T any](cm *CommonMenu, cfg *config.Config, menu *T, auto *autos
 	})
 	cm.Login.Click(func() {
 		var err error
-		cfg, err = login(app, configFile, cfg, menu, refresh)
+		cfg, err := login(app, configFile, mgr.Get(), menu, refresh)
 		if err != nil {
 			logging.Fail("Failed to login:\n%s", err)
 			return
 		}
+		mgr.Set(cfg)
 	})
 	cm.DarkMode.Click(func() {
 		if cm.DarkMode.Checked() {
@@ -106,7 +108,7 @@ func login[T any](app string, configFile string, cfg *config.Config, menu *T, re
 		return nil, err
 	}
 	exeName := fmt.Sprintf("WebViewLogin-%s.exe", config.VERSION)
-	exe := path.Join(wd, "login", exeName)
+	exe := filepath.Join(wd, "login", exeName)
 	cmd := exec.Command(exe, app)
 	cmd.Dir = "."
 	// Block until finished
@@ -123,9 +125,8 @@ func login[T any](app string, configFile string, cfg *config.Config, menu *T, re
 		return nil, err
 	}
 	logging.Info("Got ltoken and ltuid from webview")
-	cfg = cookies
 	refresh(cookies, menu)
-	return cfg, nil
+	return cookies, nil
 }
 
 func SetTheme(code uintptr) {
@@ -133,7 +134,7 @@ func SetTheme(code uintptr) {
 	pFlushMenuThemes.Call()
 }
 
-func InitApp[T any](title string, tooltip string, icon []byte, logFile string, configFile string, menu *T, app string, refresh func(*config.Config, *T)) *config.Config {
+func InitApp[T any](title string, tooltip string, icon []byte, logFile string, configFile string, menu *T, app string, refresh func(*config.Config, *T)) *config.Manager {
 	systray.SetOnClick(func(menu systray.IMenu) {
 		menu.ShowMenu()
 	})
@@ -164,6 +165,8 @@ func InitApp[T any](title string, tooltip string, icon []byte, logFile string, c
 		}
 	}
 
+	mgr := config.NewManager(cfg)
+
 	if cfg.DarkMode {
 		SetTheme(forceDarkTheme)
 	}
@@ -183,8 +186,8 @@ func InitApp[T any](title string, tooltip string, icon []byte, logFile string, c
 	}
 	cm.Autostart = cm.Advanced.AddSubMenuItemCheckbox("Autostart", "Autostart", enabled)
 
-	go refreshLoop(cfg, menu, refresh)
+	go refreshLoop(mgr, menu, refresh)
 
-	watchEvents(cm, cfg, menu, auto, logFile, configFile, app, refresh)
-	return cfg
+	watchEvents(cm, mgr, menu, auto, logFile, configFile, app, refresh)
+	return mgr
 }

@@ -1,3 +1,7 @@
+using System;
+using System.Linq;
+using System.Windows.Forms;
+
 namespace WebViewLogin
 {
     internal static class Program
@@ -6,12 +10,18 @@ namespace WebViewLogin
         ///  The main entry point for the application.
         /// </summary>
         [STAThread]
-        static void Main()
+        static void Main(string[] args)
         {
-            // To customize application configuration such as set high DPI settings or default font,
-            // see https://aka.ms/applicationconfiguration.
             ApplicationConfiguration.Initialize();
-            Application.Run(new Form1());
+            // Check for --settings flag in arguments
+            if (args.Length > 0 && Array.Exists(args, a => a.ToLower() == "--settings"))
+            {
+                Application.Run(new SettingsForm());
+            }
+            else
+            {
+                Application.Run(new Form1());
+            }
         }
     }
 }

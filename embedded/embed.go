@@ -12,7 +12,7 @@ import (
 //go:embed assets/*
 var AssetFiles embed.FS
 
-//go:embed login/WebView2Loader.dll login/WebViewLogin-v0.0.7.exe
+//go:embed login/*
 var LoginFiles embed.FS
 
 func ReadAssets[T any](a *T) {
@@ -37,39 +37,51 @@ func ReadAssets[T any](a *T) {
 }
 
 func ExtractEmbeddedFiles() {
-	read, err := LoginFiles.ReadDir("login")
+	extractDir(LoginFiles, "login", ".")
+}
+
+func extractDir(fs embed.FS, srcDir string, destDir string) {
+	read, err := fs.ReadDir(srcDir)
 	if err != nil {
-		logging.Fail("Failed to read asset dir \"login\":\n%v", err)
+		logging.Fail("Failed to read asset dir \"%s\":\n%v", srcDir, err)
 		return
 	}
-	err = os.MkdirAll("login", 0755)
-	for i, e := range read {
-		path := fmt.Sprintf("login/%s", e.Name())
-		winPath := filepath.Join(".", path)
 
-		if _, err := os.Stat(winPath); err == nil {
-			continue // File already exists
-		}
+	targetDir := filepath.Join(destDir, srcDir)
+	err = os.MkdirAll(targetDir, 0755)
+	if err != nil {
+		logging.Fail("Failed to create dir \"%s\":\n%v", targetDir, err)
+		return
+	}
 
-		file, err := LoginFiles.ReadFile(path)
-		if err != nil {
-			logging.Fail("failed to read file %d:\n%v", i, err)
+	for _, e := range read {
+		srcPath := srcDir + "/" + e.Name()
+		destPath := filepath.Join(destDir, srcPath)
+
+		if e.IsDir() {
+			extractDir(fs, srcPath, destDir)
 			continue
 		}
 
-		newFile, err := os.Create(winPath)
-		defer newFile.Close()
+		// Force overwrite to ensure we always have the latest version from inside the binary
+		file, err := fs.ReadFile(srcPath)
 		if err != nil {
-			logging.Fail("failed to create file %d:\n%v", i, err)
+			logging.Fail("failed to read file \"%s\":\n%v", srcPath, err)
+			continue
+		}
+
+		newFile, err := os.Create(destPath)
+		if err != nil {
+			logging.Fail("failed to create file \"%s\":\n%v", destPath, err)
 			continue
 		}
 
 		n, err := newFile.Write(file)
+		newFile.Close()
 		if err != nil {
-			logging.Fail("failed to write file %d:\n%v", i, err)
+			logging.Fail("failed to write file \"%s\":\n%v", destPath, err)
 			continue
 		}
-
-		logging.Info("%s: wrote %d bytes", newFile.Name(), i, n)
+		logging.Info("%s: wrote %d bytes", destPath, n)
 	}
 }

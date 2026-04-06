@@ -4,14 +4,26 @@ import (
 	"bytes"
 	"compress/gzip"
 	"crypto/md5"
+	crand "crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"io"
-	"math/rand"
+	"math/big"
 	"net/http"
 	"resin/pkg/config"
 	"time"
 )
+
+// HTTPClient is an interface that wraps the Do method of http.Client.
+type HTTPClient interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
+// Client is the default HTTP client used for requests.
+// This can be overridden in tests.
+var Client HTTPClient = &http.Client{
+	Timeout: 5 * time.Second,
+}
 
 func MakeDailyRequest(url string, ltoken string, ltuid string, actID string, game string) (*http.Response, error) {
 	jsonBody := []byte(fmt.Sprintf(`{"act_id": "%s","lang":"en-us"}`, actID))
@@ -39,14 +51,7 @@ func MakeDailyRequest(url string, ltoken string, ltuid string, actID string, gam
 	r.Header.Set("Referer", "https://act.hoyolab.com/")
 	r.Header.Set("Cookie", fmt.Sprintf("ltoken_v2=%s; ltuid_v2=%s;", ltoken, ltuid))
 
-	client := &http.Client{
-		Timeout: 5 * time.Second,
-	}
-	response, err := client.Do(r)
-	if err != nil {
-		return nil, err
-	}
-	return response, nil
+	return Client.Do(r)
 }
 
 func MakeRequest(baseURL string, server string, genshinUID string, ltoken string, ltuid string) (*http.Response, error) {
@@ -70,9 +75,8 @@ func MakeRequest(baseURL string, server string, genshinUID string, ltoken string
 	r.Header.Set("Sec-Fetch-Mode", "cors")
 	r.Header.Set("Sec-Fetch-Site", "same-site")
 
-	client := &http.Client{}
 	r.Header.Add("DS", GenerateDS())
-	return client.Do(r)
+	return Client.Do(r)
 }
 
 func GetDailyData[T any](url string, ltoken string, ltuid string, actID string, game string) (*T, error) {
@@ -111,7 +115,8 @@ func GenerateDS() string {
 
 	random_bytes := make([]byte, 6)
 	for i := range random_bytes {
-		random_bytes[i] = charset[rand.Intn(len(charset))]
+		idx, _ := crand.Int(crand.Reader, big.NewInt(int64(len(charset))))
+		random_bytes[i] = charset[idx.Int64()]
 	}
 
 	const salt = "6s25p5ox5y14umn1p61aqyyvbvvl3lrt"

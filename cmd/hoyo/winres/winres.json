@@ -1,0 +1,29 @@
+{
+  "RT_GROUP_ICON": {
+    "APP_ICON": {
+      "0409": "../../../embedded/assets/genshin/resin_not_full.ico"
+    }
+  },
+  "RT_VERSION": {
+    "#1": {
+      "0409": {
+        "FileFlagsMask": "3f",
+        "FileFlags": "00",
+        "FileOS": "00040004",
+        "FileType": "01",
+        "FileVersion": "0.0.8.0",
+        "ProductVersion": "0.0.8.0",
+        "FileAttributes": {
+          "CompanyName": "Antigravity",
+          "FileDescription": "Unified HoyoLAB Monitor",
+          "FileVersion": "0.0.8.0",
+          "InternalName": "hoyo.exe",
+          "LegalCopyright": "Copyright 2024",
+          "OriginalFilename": "hoyo.exe",
+          "ProductName": "Hoyo Monitor",
+          "ProductVersion": "0.0.8.0"
+        }
+      }
+    }
+  }
+}

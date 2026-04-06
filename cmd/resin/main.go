@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math/rand"
 	"resin/cmd"
 	"resin/embedded"
 	"resin/pkg/config"
@@ -10,14 +11,15 @@ import (
 	"resin/pkg/logging"
 	"resin/pkg/ui"
 	"strconv"
+	"time"
 
 	"github.com/energye/systray"
 )
 
 var logFile string = ".\\resin.log"
-var configFile string = ".\\genshin_cookie.json"
+var configFile string = ".\\hoyo_cookie.json"
 
-type GenshinAssets struct {
+type AllAssets struct {
 	ResinFull    []byte `asset:"genshin/resin_full.ico"`
 	ResinNotFull []byte `asset:"genshin/resin_not_full.ico"`
 	ResinError   []byte `asset:"genshin/resin_error.ico"`
@@ -28,7 +30,7 @@ type GenshinAssets struct {
 	CheckIn      []byte `asset:"genshin/checkin.ico"`
 }
 
-var assets GenshinAssets
+var assets AllAssets
 
 type Menu struct {
 	Resin      *systray.MenuItem
@@ -40,36 +42,34 @@ type Menu struct {
 }
 
 func refreshData(cfg *config.Config, m *Menu) {
-	if cfg == nil || m == nil {
+	uid := cfg.GetGenshinUID()
+	if uid == "" {
+		m.Resin.SetTitle("Resin: no UID set")
 		return
 	}
-	server := genshin.Servers[cfg.UID[0]]
-	gr, err := hoyo.GetData[genshin.GenshinResponse](genshin.BaseURL, server, cfg.UID, cfg.Ltoken, cfg.Ltuid)
+	server, ok := genshin.Servers[uid[0]]
+	if !ok {
+		m.Resin.SetTitle("Resin: unknown region")
+		return
+	}
+
+	gr, err := hoyo.GetData[genshin.GenshinResponse](genshin.BaseURL, server, uid, cfg.Ltoken, cfg.Ltuid)
 	if err != nil {
-		logging.Fail("Failed getting data from %s: Check your UID, ltoken, and ltuid\n%s", genshin.BaseURL, err)
-		systray.SetTooltip("Failed getting data!")
+		logging.Fail("Genshin: failed getting data: %s", err)
 		systray.SetIcon(assets.ResinError)
 		return
 	}
 	if gr.Retcode != 0 {
-		logging.Fail("Server responded with (%d): %s\nCheck your UID, ltoken, and ltuid", gr.Retcode, gr.Message)
-		systray.SetTooltip("Bad response from server!")
+		logging.Fail("Genshin: server responded (%d): %s", gr.Retcode, gr.Message)
 		systray.SetIcon(assets.ResinError)
 		return
 	}
 
 	current := gr.Data.CurrentResin
 	max := gr.Data.MaxResin
-
-	seconds, err := strconv.Atoi(gr.Data.ResinRecoveryTime)
-
-	var recovery string
-	if err != nil {
-		logging.Warn("Failed parsing recovery time (got \"%s\")\n%s", gr.Data.ResinRecoveryTime, err)
-		recovery = " [?]"
-	} else if seconds == 0 {
-		recovery = ""
-	} else {
+	seconds, _ := strconv.Atoi(gr.Data.ResinRecoveryTime)
+	recovery := ""
+	if seconds != 0 {
 		hours, minutes := hoyo.GetTime(seconds)
 		recovery = fmt.Sprintf(" [%dh %dm]", hours, minutes)
 	}
@@ -95,29 +95,12 @@ func refreshData(cfg *config.Config, m *Menu) {
 	m.Domain.SetTitle(fmt.Sprintf("Weekly Bosses: %d/%d", gr.Data.RemainResinDiscountNum, gr.Data.ResinDiscountNumLimit))
 }
 
-func checkIn(cfg *config.Config) {
-	json, err := hoyo.GetDailyData[genshin.GenshinDailyResponse](genshin.DailyURL, cfg.Ltoken, cfg.Ltuid, genshin.ActID, "genshin")
-	if err != nil {
-		logging.Fail("Failed getting check in repsonse\n%s", err)
-		return
-	}
-	logging.Info("%d: %s", json.Retcode, json.Message)
-}
-
-func watchEvents(cfg *config.Config, m *Menu) {
-	m.CheckIn.Click(func() {
-		logging.Info("Clicked check in")
-		checkIn(cfg)
-	})
-}
-
 func onReady() {
 	defer logging.CapturePanic()
 	logging.SetFile(logFile)
-
 	embedded.ReadAssets(&assets)
 
-	var m Menu
+	m := &Menu{}
 	m.Resin = ui.CreateMenuItem("Resin: ?/?", assets.ResinNotFull)
 	m.Commission = ui.CreateMenuItem("Commissions: ?/?", assets.Commission)
 	m.Expedition = ui.CreateMenuItem("Expeditions: ?/?", assets.Expedition)
@@ -125,12 +108,26 @@ func onReady() {
 	m.Domain = ui.CreateMenuItem("Weekly Bosses: ?/?", assets.WeeklyBoss)
 	m.CheckIn = ui.CreateMenuItem("Check In", assets.CheckIn)
 
-	cfg := ui.InitApp("Genshin Real-Time Notes", "?/?", assets.ResinNotFull, logFile, configFile, &m, "genshin", refreshData)
-	watchEvents(cfg, &m)
+	rand.Seed(time.Now().UnixNano())
+
+	mgr := ui.InitApp("Genshin Real-Time Notes", "?/?", assets.ResinNotFull, logFile, configFile, m, "genshin", refreshData)
+
+	m.CheckIn.Click(func() {
+		logging.Info("Clicked Genshin check-in")
+		resp, err := hoyo.GetDailyData[genshin.GenshinDailyResponse](genshin.DailyURL, mgr.Get().Ltoken, mgr.Get().Ltuid, genshin.ActID, "genshin")
+		if err != nil {
+			logging.Fail("Genshin check-in failed: %s", err)
+			return
+		}
+		logging.Info("Genshin check-in: %d %s", resp.Retcode, resp.Message)
+		ui.Notify("Genshin Check-In", resp.Message, "genshin", assets.CheckIn)
+	})
 }
 
 func main() {
-	cmd.ReadArgs(configFile, ".\\daily_genshin.log", checkIn)
+	cmd.ReadArgs(configFile, ".\\daily_resin.log", func(cfg *config.Config) {
+		hoyo.GetDailyData[genshin.GenshinDailyResponse](genshin.DailyURL, cfg.Ltoken, cfg.Ltuid, genshin.ActID, "genshin")
+	})
 	defer logging.CapturePanic()
 	systray.Run(onReady, cmd.OnExit)
 }
