@@ -3,6 +3,7 @@ package genshin
 const BaseURL = "https://bbs-api-os.hoyolab.com/game_record/genshin/api/dailyNote"
 
 const DailyURL = "https://sg-hk4e-api.hoyolab.com/event/sol/sign?lang=en-us"
+const InfoURL = "https://sg-hk4e-api.hoyolab.com/event/sol/info?lang=en-us"
 const ActID = "e202102251931481"
 
 var Servers = map[byte]string{
@@ -100,4 +101,14 @@ type GenshinDailyGtResult struct {
 	Challenge string `json:"challenge"`
 	Success   int    `json:"success"`
 	IsRisk    bool   `json:"is_risk"`
+}
+
+type GenshinCheckInInfoResponse struct {
+	Retcode int                    `json:"retcode"`
+	Message string                 `json:"message"`
+	Data    GenshinCheckInInfoData `json:"data"`
+}
+
+type GenshinCheckInInfoData struct {
+	IsSign bool `json:"is_sign"`
 }

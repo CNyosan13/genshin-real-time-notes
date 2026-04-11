@@ -3,6 +3,7 @@ package zzz
 const BaseURL = "https://sg-act-nap-api.hoyolab.com/event/game_record_zzz/api/zzz/note"
 
 const DailyURL = "https://sg-public-api.hoyolab.com/event/luna/zzz/os/sign"
+const InfoURL = "https://sg-public-api.hoyolab.com/event/luna/zzz/os/info?lang=en-us"
 const ActID = "e202406031448091"
 
 // **Second** character in UID. First is always '1'
@@ -58,4 +59,14 @@ type ZzzDailyResponse struct {
 	Retcode int          `json:"retcode"`
 	Message string       `json:"message"`
 	Data    ZzzDailyData `json:"data"`
+}
+
+type ZzzCheckInInfoResponse struct {
+	Retcode int                `json:"retcode"`
+	Message string             `json:"message"`
+	Data    ZzzCheckInInfoData `json:"data"`
+}
+
+type ZzzCheckInInfoData struct {
+	IsSign bool `json:"is_sign"`
 }

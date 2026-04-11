@@ -3,6 +3,7 @@ package hsr
 const BaseURL = "https://bbs-api-os.hoyolab.com/game_record/hkrpg/api/note"
 
 const DailyURL = "https://sg-public-api.hoyolab.com/event/luna/os/sign"
+const InfoURL = "https://sg-public-api.hoyolab.com/event/luna/os/info?lang=en-us"
 const ActID = "e202303301540311"
 
 var Servers = map[byte]string{
@@ -60,4 +61,14 @@ type HsrDailyResponse struct {
 	Retcode int          `json:"retcode"`
 	Message string       `json:"message"`
 	Data    HsrDailyData `json:"data"`
+}
+
+type HsrCheckInInfoResponse struct {
+	Retcode int                `json:"retcode"`
+	Message string             `json:"message"`
+	Data    HsrCheckInInfoData `json:"data"`
+}
+
+type HsrCheckInInfoData struct {
+	IsSign bool `json:"is_sign"`
 }

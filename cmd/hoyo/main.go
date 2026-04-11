@@ -130,6 +130,62 @@ func isNotified(game string) bool {
 	return notifiedFull.states[game]
 }
 
+// ─── Auto Check-in state ─────────────────────────────────────────────────────
+
+var activeCheckIns = struct {
+	sync.Mutex
+	lastDone map[string]time.Time
+}{
+	lastDone: make(map[string]time.Time),
+}
+
+var checkInGlobalLock sync.Mutex // Sequential execution for all check-ins
+
+func tryAutoCheckIn(game string, ltoken string, ltuid string, url string, actID string) {
+	activeCheckIns.Lock()
+	last, exists := activeCheckIns.lastDone[game]
+	// If checked in today (since 4 PM UTC), skip
+	now := time.Now().UTC()
+	resetTime := time.Date(now.Year(), now.Month(), now.Day(), 16, 0, 0, 0, time.UTC)
+	if now.Before(resetTime) {
+		resetTime = resetTime.AddDate(0, 0, -1)
+	}
+
+	if exists && last.After(resetTime) {
+		activeCheckIns.Unlock()
+		return
+	}
+	activeCheckIns.Unlock()
+
+	// Perform check-in sequentially
+	checkInGlobalLock.Lock()
+	defer checkInGlobalLock.Unlock()
+
+	// Double check status after getting lock
+	activeCheckIns.Lock()
+	if last, exists = activeCheckIns.lastDone[game]; exists && last.After(resetTime) {
+		activeCheckIns.Unlock()
+		return
+	}
+	activeCheckIns.Unlock()
+
+	// 10 seconds random delay as requested
+	jitter := rand.Intn(10) + 1
+	logging.Info("Auto Check-In (%s): scheduled in %d seconds", game, jitter)
+	time.Sleep(time.Duration(jitter) * time.Second)
+
+	resp, err := hoyo.GetDailyData[genshin.GenshinDailyResponse](url, ltoken, ltuid, actID, game)
+	if err != nil {
+		logging.Fail("Auto Check-In (%s): failed: %s", game, err)
+		return
+	}
+	logging.Info("Auto Check-In (%s): message=%s", game, resp.Message)
+
+	activeCheckIns.Lock()
+	activeCheckIns.lastDone[game] = time.Now().UTC()
+	activeCheckIns.Unlock()
+}
+
 // ─── Refresh logic ────────────────────────────────────────────────────────────
 
 // refreshAll fetches all three games in parallel and updates tray menu items.
@@ -217,10 +273,11 @@ func refreshGenshin(cfg *config.Config, m *Menu) {
 	// Dashboard UI Logic
 	isFull := currentVal >= maxVal
 	isThresholdMet := currentVal >= threshold
+	indicator := ""
 
 	if isFull {
 		m.Resin.SetIcon(assets.ResinFull)
-		title = "!!! " + title
+		indicator = "\t‼️"
 		setNotified("genshin_threshold", true) // Ensure threshold alert is suppressed
 		if !isNotified("genshin_max") {
 			ui.Notify("Genshin Impact", fmt.Sprintf("Your Resin is FULL (%d/%d)!", currentVal, maxVal), "genshin", assets.ResinFull)
@@ -228,7 +285,7 @@ func refreshGenshin(cfg *config.Config, m *Menu) {
 		}
 	} else if isThresholdMet {
 		m.Resin.SetIcon(assets.ResinNotFull)
-		title = "! " + title
+		indicator = "\t❗"
 		setNotified("genshin_max", false)
 		if !isNotified("genshin_threshold") {
 			ui.Notify("Genshin Impact", fmt.Sprintf("Your Resin has reached your threshold: %d/%d!", currentVal, maxVal), "genshin", assets.ResinFull)
@@ -239,16 +296,19 @@ func refreshGenshin(cfg *config.Config, m *Menu) {
 		setNotified("genshin_threshold", false)
 		setNotified("genshin_max", false)
 	}
-	m.Resin.SetTitle(title)
+	m.Resin.SetTitle(title + indicator)
 
 	commCur := gr.Data.FinishedTaskNum
 	commMax := gr.Data.TotalTaskNum
-	m.Commission.SetTitle(fmt.Sprintf("Commissions: %d/%d", commCur, commMax))
+	commTitle := fmt.Sprintf("Commissions: %d/%d", commCur, commMax)
+	indicator = ""
 	if commCur == commMax {
 		m.Commission.Disable()
 	} else {
 		m.Commission.Enable()
+		indicator = "\t❗"
 	}
+	m.Commission.SetTitle(commTitle + indicator)
 
 	count := 0
 	for _, exp := range gr.Data.Expeditions {
@@ -257,8 +317,9 @@ func refreshGenshin(cfg *config.Config, m *Menu) {
 		}
 	}
 	expTitle := fmt.Sprintf("Expeditions: %d/%d", count, gr.Data.MaxExpeditionNum)
+	indicator = ""
 	if count > 0 {
-		expTitle = "! " + expTitle
+		indicator = "\t❗"
 		if !isNotified("genshin_exp_done") {
 			ui.Notify("Genshin Impact", "Expeditions are ready to claim!", "genshin", assets.Expedition)
 			setNotified("genshin_exp_done", true)
@@ -266,13 +327,14 @@ func refreshGenshin(cfg *config.Config, m *Menu) {
 	} else {
 		setNotified("genshin_exp_done", false)
 	}
-	m.Expedition.SetTitle(expTitle)
+	m.Expedition.SetTitle(expTitle + indicator)
 
 	realmCur := gr.Data.CurrentHomeCoin
 	realmMax := gr.Data.MaxHomeCoin
 	realmTitle := fmt.Sprintf("Realm: %d/%d", realmCur, realmMax)
+	indicator = ""
 	if realmCur >= realmMax && realmMax > 0 {
-		realmTitle = "! " + realmTitle
+		indicator = "\t❗"
 		if !isNotified("genshin_realm_full") {
 			ui.Notify("Genshin Impact", "Realm Currency is FULL!", "genshin", assets.Realm)
 			setNotified("genshin_realm_full", true)
@@ -280,8 +342,25 @@ func refreshGenshin(cfg *config.Config, m *Menu) {
 	} else {
 		setNotified("genshin_realm_full", false)
 	}
-	m.Realm.SetTitle(realmTitle)
+	m.Realm.SetTitle(realmTitle + indicator)
 	m.Domain.SetTitle(fmt.Sprintf("Weekly Bosses: %d/%d", gr.Data.RemainResinDiscountNum, gr.Data.ResinDiscountNumLimit))
+
+	// Check-in logic
+	ci, err := hoyo.GetCheckInStatus[genshin.GenshinCheckInInfoResponse](genshin.InfoURL, cfg.Ltoken, cfg.Ltuid, genshin.ActID, "genshin")
+	if err == nil && ci.Retcode == 0 {
+		status := "Not Done"
+		indicator := "\t❗"
+		if ci.Data.IsSign {
+			status = "Done"
+			indicator = ""
+		} else {
+			// Auto check-in if not signed
+			go tryAutoCheckIn("genshin", cfg.Ltoken, cfg.Ltuid, genshin.DailyURL, genshin.ActID)
+		}
+		m.GenshinCI.SetTitle(fmt.Sprintf("Check In (Genshin) : %s%s", status, indicator))
+	} else {
+		m.GenshinCI.SetTitle("Check In (Genshin) : Error")
+	}
 }
 
 // refreshHsr updates Honkai: Star Rail tray items.
@@ -339,10 +418,11 @@ func refreshHsr(cfg *config.Config, m *Menu) {
 	// Dashboard UI Logic
 	isFull := currentVal >= maxVal
 	isThresholdMet := currentVal >= threshold
+	indicator := ""
 
 	if isFull {
 		m.Stamina.SetIcon(assets.StaminaFull)
-		title = "!!! " + title
+		indicator = "\t‼️"
 		setNotified("hsr_threshold", true)
 		if !isNotified("hsr_max") {
 			ui.Notify("Honkai: Star Rail", fmt.Sprintf("Your Stamina is FULL (%d/%d)!", currentVal, maxVal), "hsr", assets.StaminaFull)
@@ -350,7 +430,7 @@ func refreshHsr(cfg *config.Config, m *Menu) {
 		}
 	} else if isThresholdMet {
 		m.Stamina.SetIcon(assets.StaminaNotFull)
-		title = "! " + title
+		indicator = "\t❗"
 		setNotified("hsr_max", false)
 		if !isNotified("hsr_threshold") {
 			ui.Notify("Honkai: Star Rail", fmt.Sprintf("Your Stamina has reached your threshold: %d/%d!", currentVal, maxVal), "hsr", assets.StaminaFull)
@@ -361,16 +441,19 @@ func refreshHsr(cfg *config.Config, m *Menu) {
 		setNotified("hsr_threshold", false)
 		setNotified("hsr_max", false)
 	}
-	m.Stamina.SetTitle(title)
+	m.Stamina.SetTitle(title + indicator)
 
 	trainCur := hr.Data.CurrentTrainScore
 	trainMax := hr.Data.MaxTrainScore
-	m.Training.SetTitle(fmt.Sprintf("Training: %d/%d", trainCur, trainMax))
+	trainTitle := fmt.Sprintf("Training: %d/%d", trainCur, trainMax)
+	indicator = ""
 	if trainCur == trainMax {
 		m.Training.Disable()
 	} else {
 		m.Training.Enable()
+		indicator = "\t❗"
 	}
+	m.Training.SetTitle(trainTitle + indicator)
 
 	count := 0
 	for _, exp := range hr.Data.Expeditions {
@@ -379,8 +462,9 @@ func refreshHsr(cfg *config.Config, m *Menu) {
 		}
 	}
 	expTitle := fmt.Sprintf("Expeditions: %d/%d", count, hr.Data.TotalExpeditionNum)
+	indicator = ""
 	if count > 0 {
-		expTitle = "! " + expTitle
+		indicator = "\t❗"
 		if !isNotified("hsr_exp_done") {
 			ui.Notify("Honkai: Star Rail", "Expeditions are ready to claim!", "hsr", assets.HsrExpedition)
 			setNotified("hsr_exp_done", true)
@@ -388,9 +472,26 @@ func refreshHsr(cfg *config.Config, m *Menu) {
 	} else {
 		setNotified("hsr_exp_done", false)
 	}
-	m.HsrExp.SetTitle(expTitle)
+	m.HsrExp.SetTitle(expTitle + indicator)
 	m.Reserve.SetTitle(fmt.Sprintf("Reserve: %d/2400", hr.Data.CurrentReserveStamina))
 	m.EchoOfWar.SetTitle(fmt.Sprintf("Echo of War: %d/%d", hr.Data.WeeklyCocoonCnt, hr.Data.WeeklyCocoonLimit))
+
+	// Check-in logic
+	ci, err := hoyo.GetCheckInStatus[hsr.HsrCheckInInfoResponse](hsr.InfoURL, cfg.Ltoken, cfg.Ltuid, hsr.ActID, "hsr")
+	if err == nil && ci.Retcode == 0 {
+		status := "Not Done"
+		indicator := "\t❗"
+		if ci.Data.IsSign {
+			status = "Done"
+			indicator = ""
+		} else {
+			// Auto check-in if not signed
+			go tryAutoCheckIn("hsr", cfg.Ltoken, cfg.Ltuid, hsr.DailyURL, hsr.ActID)
+		}
+		m.HsrCI.SetTitle(fmt.Sprintf("Check In (HSR) : %s%s", status, indicator))
+	} else {
+		m.HsrCI.SetTitle("Check In (HSR) : Error")
+	}
 }
 
 // refreshZzz updates Zenless Zone Zero tray items.
@@ -450,13 +551,13 @@ func refreshZzz(cfg *config.Config, m *Menu) {
 		threshold = maxVal
 	}
 
-	// Dashboard UI Logic
 	isFull := currentVal >= maxVal
 	isThresholdMet := currentVal >= threshold
+	indicator := ""
 
 	if isFull {
 		m.Charge.SetIcon(assets.ChargeFull)
-		title = "!!! " + title
+		indicator = "\t‼️"
 		setNotified("zzz_threshold", true)
 		if !isNotified("zzz_max") {
 			ui.Notify("Zenless Zone Zero", fmt.Sprintf("Your Battery Charge is FULL (%d/%d)!", currentVal, maxVal), "zzz", assets.ChargeFull)
@@ -464,7 +565,7 @@ func refreshZzz(cfg *config.Config, m *Menu) {
 		}
 	} else if isThresholdMet {
 		m.Charge.SetIcon(assets.ChargeNotFull)
-		title = "! " + title
+		indicator = "\t❗"
 		setNotified("zzz_max", false)
 		if !isNotified("zzz_threshold") {
 			ui.Notify("Zenless Zone Zero", fmt.Sprintf("Your Battery Charge has reached your threshold: %d/%d!", currentVal, maxVal), "zzz", assets.ChargeFull)
@@ -475,29 +576,57 @@ func refreshZzz(cfg *config.Config, m *Menu) {
 		setNotified("zzz_threshold", false)
 		setNotified("zzz_max", false)
 	}
-	m.Charge.SetTitle(title)
+	m.Charge.SetTitle(title + indicator)
 
 	dailyCur := zr.Data.Vitality.Current
 	dailyMax := zr.Data.Vitality.Max
-	m.Engagement.SetTitle(fmt.Sprintf("Engagement: %d/%d", dailyCur, dailyMax))
+	dailyTitle := fmt.Sprintf("Engagement: %d/%d", dailyCur, dailyMax)
+	indicator = ""
 	if dailyCur == dailyMax {
 		m.Engagement.Disable()
 		m.Engagement.SetIcon(assets.EngagementDone)
 	} else {
 		m.Engagement.Enable()
 		m.Engagement.SetIcon(assets.Engagement)
+		indicator = "\t❗"
 	}
+	m.Engagement.SetTitle(dailyTitle + indicator)
 
 	if saleState, ok := SaleStates[zr.Data.VhsSale.SaleState]; ok {
-		m.VideoStore.SetTitle(fmt.Sprintf("Video Store: %s", saleState))
+		indicator := ""
+		if zr.Data.VhsSale.SaleState != "SaleStateDoing" {
+			indicator = "\t❗"
+		}
+		m.VideoStore.SetTitle(fmt.Sprintf("Video Store: %s%s", saleState, indicator))
 	} else {
 		m.VideoStore.SetTitle("Video Store: ERROR")
 	}
 
 	if cardSign, ok := CardSigns[zr.Data.CardSign]; ok {
-		m.ScratchCard.SetTitle(fmt.Sprintf("Scratch Card: %s", cardSign))
+		indicator := ""
+		if zr.Data.CardSign == "CardSignNo" {
+			indicator = "\t❗"
+		}
+		m.ScratchCard.SetTitle(fmt.Sprintf("Scratch Card: %s%s", cardSign, indicator))
 	} else {
 		m.ScratchCard.SetTitle("Scratch Card: ERROR")
+	}
+
+	// Check-in logic
+	ci, err := hoyo.GetCheckInStatus[zzz.ZzzCheckInInfoResponse](zzz.InfoURL, cfg.Ltoken, cfg.Ltuid, zzz.ActID, "zzz")
+	if err == nil && ci.Retcode == 0 {
+		status := "Not Done"
+		indicator := "\t❗"
+		if ci.Data.IsSign {
+			status = "Done"
+			indicator = ""
+		} else {
+			// Auto check-in if not signed
+			go tryAutoCheckIn("zzz", cfg.Ltoken, cfg.Ltuid, zzz.DailyURL, zzz.ActID)
+		}
+		m.ZzzCI.SetTitle(fmt.Sprintf("Check In (ZZZ) : %s%s", status, indicator))
+	} else {
+		m.ZzzCI.SetTitle("Check In (ZZZ) : Error")
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"net/http"
 	"resin/pkg/config"
+	"strings"
 	"time"
 )
 
@@ -45,6 +46,40 @@ func MakeDailyRequest(url string, ltoken string, ltuid string, actID string, gam
 	r.Header.Set("x-rpc-device_name", "")
 	if game == "zzz" {
 		r.Header.Set("x-rpc-signgame", "zzz")
+	} else if game == "hsr" {
+		r.Header.Set("x-rpc-signgame", "hkrpg")
+	}
+	r.Header.Set("Origin", "https://act.hoyolab.com")
+	r.Header.Set("Connection", "keep-alive")
+	r.Header.Set("Referer", "https://act.hoyolab.com/")
+	r.Header.Set("Cookie", fmt.Sprintf("ltoken_v2=%s; ltuid_v2=%s;", ltoken, ltuid))
+
+	return Client.Do(r)
+}
+
+func MakeInfoRequest(url string, ltoken string, ltuid string, actID string, game string) (*http.Response, error) {
+	sep := "&"
+	if !strings.Contains(url, "?") {
+		sep = "?"
+	}
+	fullURL := fmt.Sprintf("%s%sact_id=%s", url, sep, actID)
+	r, err := http.NewRequest("GET", fullURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	r.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0")
+	r.Header.Set("Accept", "application/json, text/plain, */*")
+	r.Header.Set("Accept-Language", "en-US,en;q=0.5")
+	r.Header.Set("Accept-Encoding", "gzip, deflate, br, zstd")
+	r.Header.Set("x-rpc-client_type", "5")
+	r.Header.Set("x-rpc-device_id", "7ba783da-1cc5-4c95-87f5-760e064faf37")
+	r.Header.Set("x-rpc-app_version", "1.5.0")
+	r.Header.Set("x-rpc-platform", "4")
+	r.Header.Set("x-rpc-language", "en-us")
+	if game == "zzz" {
+		r.Header.Set("x-rpc-signgame", "zzz")
+	} else if game == "hsr" {
+		r.Header.Set("x-rpc-signgame", "hkrpg")
 	}
 	r.Header.Set("Origin", "https://act.hoyolab.com")
 	r.Header.Set("Connection", "keep-alive")
@@ -84,6 +119,16 @@ func GetDailyData[T any](url string, ltoken string, ltuid string, actID string, 
 	if err != nil {
 		return nil, err
 	}
+	defer response.Body.Close()
+	return config.LoadJSON[T](response.Body)
+}
+
+func GetCheckInStatus[T any](url string, ltoken string, ltuid string, actID string, game string) (*T, error) {
+	response, err := MakeInfoRequest(url, ltoken, ltuid, actID, game)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
 	return config.LoadJSON[T](response.Body)
 }
 

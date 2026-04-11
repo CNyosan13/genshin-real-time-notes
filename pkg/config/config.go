@@ -10,6 +10,12 @@ import (
 
 const VERSION = "v0.0.8" // Set via ldflags
 
+const (
+	DefaultResinThreshold   = 160
+	DefaultStaminaThreshold = 240
+	DefaultChargeThreshold  = 200
+)
+
 // Config holds HoyoLAB credentials and app settings.
 // GenshinUID, HsrUID, ZzzUID are optional per-game overrides.
 // If unset, the legacy UID field is used as fallback.
@@ -101,6 +107,17 @@ func LoadConfig(configPath string) (*Config, error) {
 
 	// Ensure at least one second of wait time before refresh
 	cfg.RefreshInterval = max(1, cfg.RefreshInterval)
+
+	// Set default thresholds if 0
+	if cfg.ResinNotifyThreshold == 0 {
+		cfg.ResinNotifyThreshold = DefaultResinThreshold
+	}
+	if cfg.StaminaNotifyThreshold == 0 {
+		cfg.StaminaNotifyThreshold = DefaultStaminaThreshold
+	}
+	if cfg.ChargeNotifyThreshold == 0 {
+		cfg.ChargeNotifyThreshold = DefaultChargeThreshold
+	}
 
 	return &cfg, nil
 }
